@@ -46,5 +46,8 @@ services:
         sync: false
       - key: CF_API_TOKEN
         sync: false
+      # Token del AI Gateway autenticado (encabezado cf-aig-authorization).
+      - key: CF_AIG_TOKEN
+        sync: false
       - key: LANGSMITH_API_KEY
         sync: false

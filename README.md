@@ -181,9 +181,10 @@ solo cuando el CI pasa. Fija `ENVIRONMENT=production`, `MODEL_PROVIDER=gateway`,
 `HIDE_OUTPUTS=true`, así que las reglas de compliance aplican. Además fija `WEB_CONCURRENCY=2`,
 `RATE_LIMIT_PER_MINUTE=60` (por cliente y por proceso), `RESPONSE_CACHE_TTL_SECONDS=300`,
 `CACHE_TTL_SECONDS=300`, `PII_POLICY=mask`, `LANGSMITH_TRACING=true` y `LANGSMITH_PROJECT=hr-assistant-reto`.
-En Render las trazas son obligatorias: los secretos `API_KEYS`, `CF_ACCOUNT_ID`, `CF_API_TOKEN` y
-`LANGSMITH_API_KEY` están con `sync: false` y se escriben en Render > Environment, nunca en el repositorio
-(ADR 0017). En local las trazas siguen siendo opcionales: con `LANGSMITH_TRACING=false`, que es el valor por
+En Render las trazas son obligatorias: los secretos `API_KEYS`, `CF_ACCOUNT_ID`, `CF_API_TOKEN`,
+`CF_AIG_TOKEN` y `LANGSMITH_API_KEY` están con `sync: false` y se escriben en Render > Environment, nunca en el
+repositorio (ADR 0017). `CF_AIG_TOKEN` hace falta porque el AI Gateway en uso tiene "Authenticated Gateway"
+encendido: sin él, Cloudflare rechaza cada llamada y `POST /ask` responde 502. En local las trazas siguen siendo opcionales: con `LANGSMITH_TRACING=false`, que es el valor por
 omisión, o sin clave, no se conecta LangSmith.
 
 **Prueba de humo.** Después de publicar, desde `product/`, con la clave de un cliente en `SMOKE_API_KEY`
@@ -217,6 +218,7 @@ Todas se validan al arrancar: un valor inválido detiene la aplicación con un m
 | `CF_ACCOUNT_ID` | (sin valor) | Cuenta de Cloudflare (obligatoria con `gateway`) |
 | `CF_GATEWAY_ID` | `default` | Id del AI Gateway (obligatorio con `gateway`) |
 | `CF_API_TOKEN` | (sin valor) | Token de Cloudflare, secreto (obligatorio con `gateway`) |
+| `CF_AIG_TOKEN` | (sin valor) | Token del AI Gateway, secreto y opcional: si tiene valor se manda en `cf-aig-authorization` (necesario con "Authenticated Gateway"); vacío, no se manda |
 | `MODEL_SMALL` | `@cf/meta/llama-3.1-8b-instruct-fast` | Modelo barato; debe tener precio |
 | `MODEL_LARGE` | `@cf/meta/llama-3.3-70b-instruct-fp8-fast` | Modelo capaz; debe tener precio |
 | `ROUTING` | `true` | Enrutamiento por pregunta (`true`/`false`) |
@@ -245,5 +247,5 @@ tiempo constante (`hmac.compare_digest`). Genera claves largas y aleatorias, por
 `python -c "import secrets; print(secrets.token_urlsafe(32))"`.
 
 `LANGSMITH_API_KEY` solo se lee del entorno: la usa el SDK de LangSmith, no se guarda en la configuración y
-nunca se escribe en el log ni en el código. No la pongas en archivos versionados. `CF_API_TOKEN` se guarda en la
-configuración, pero no aparece en su `repr`, en el log, en las trazas ni en los mensajes de error.
+nunca se escribe en el log ni en el código. No la pongas en archivos versionados. `CF_API_TOKEN` y `CF_AIG_TOKEN`
+se guardan en la configuración, pero no aparecen en su `repr`, en el log, en las trazas ni en los mensajes de error.

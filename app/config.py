@@ -2,8 +2,8 @@
 
 La configuracion se valida al arrancar: un valor invalido lanza ``ConfigError``
 con el nombre de la variable y el valor recibido, y la aplicacion no arranca.
-Los valores secretos (``CF_API_TOKEN`` y las claves de ``API_KEYS``) nunca
-aparecen en mensajes ni en ``repr``.
+Los valores secretos (``CF_API_TOKEN``, ``CF_AIG_TOKEN`` y las claves de
+``API_KEYS``) nunca aparecen en mensajes ni en ``repr``.
 """
 
 from collections.abc import Mapping
@@ -87,6 +87,9 @@ class Settings:  # pylint: disable=too-many-instance-attributes
     :type cf_gateway_id: str
     :param cf_api_token: Token de Cloudflare (secreto; no sale en ``repr``)
     :type cf_api_token: str
+    :param cf_aig_token: Token del AI Gateway autenticado (opcional y secreto;
+        no sale en ``repr``). Vacio: no se manda ``cf-aig-authorization``
+    :type cf_aig_token: str
     :param model_small: Modelo barato
     :type model_small: str
     :param model_large: Modelo capaz
@@ -138,6 +141,7 @@ class Settings:  # pylint: disable=too-many-instance-attributes
     cf_account_id: str = ""
     cf_gateway_id: str = DEFAULT_CF_GATEWAY_ID
     cf_api_token: str = field(default="", repr=False)
+    cf_aig_token: str = field(default="", repr=False)
     model_small: str = DEFAULT_MODEL_SMALL
     model_large: str = DEFAULT_MODEL_LARGE
     routing: bool = True
@@ -300,16 +304,19 @@ def _employees_path(env: Mapping[str, str]) -> Path:
 def _cloudflare(env: Mapping[str, str], provider: str) -> dict:
     """Lee las variables ``CF_*``; con ``gateway`` ninguna puede faltar.
 
-    Los mensajes de error nombran la variable, nunca su valor (el token es
-    secreto).
+    ``CF_AIG_TOKEN`` es opcional siempre: solo hace falta si el AI Gateway
+    tiene encendido "Authenticated Gateway". Los mensajes de error nombran la
+    variable, nunca su valor (los tokens son secretos).
 
     :param env: Variables de entorno
     :type env: Mapping[str, str]
     :param provider: Proveedor ya validado
     :type provider: str
-    :return: ``cf_account_id``, ``cf_gateway_id`` y ``cf_api_token``
+    :return: ``cf_account_id``, ``cf_gateway_id``, ``cf_api_token`` y
+        ``cf_aig_token``
     :rtype: dict[str, str]
     :raises ConfigError: Si el proveedor es ``gateway`` y falta alguna
+        obligatoria
     """
     defaults = {"CF_GATEWAY_ID": DEFAULT_CF_GATEWAY_ID}
     values = {}
@@ -320,6 +327,7 @@ def _cloudflare(env: Mapping[str, str], provider: str) -> dict:
                 f"{name} must not be empty when MODEL_PROVIDER={PROVIDER_GATEWAY}"
             )
         values[name.lower()] = value
+    values["cf_aig_token"] = str(env.get("CF_AIG_TOKEN", "")).strip()
     return values
 
 
