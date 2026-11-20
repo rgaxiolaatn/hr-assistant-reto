@@ -35,7 +35,26 @@ Lectura rápida de una petición:
 2. Sin `agent_run` y con `status` 200: fue un acierto de la caché de respuestas (`cost_usd` 0).
 3. Con `agent_run`: comparar `agent_run.latency_ms` (agente y modelo) contra `request.latency_ms` (toda la
    petición). `stopped: max_steps` indica que el agente agotó `AGENT_MAX_STEPS`.
-4. `error` con `error_type: ModelUnavailable` junto a un `502`: falló Cloudflare AI Gateway.
+4. `error` con `error_type: ModelUnavailable` junto a un `502`: falló la llamada a Cloudflare AI Gateway. El log no
+   dice por qué (caída, timeout o 401 por configuración); ver la lección operativa de abajo.
+5. `audit pii_detected` con `where: answer` en una pregunta sin datos sensibles: el modelo devolvió algo con forma
+   de dato personal (por ejemplo, un teléfono inventado) y el enmascarado lo tapó (`doc/security.md`, "Sin datos
+   inventados").
+
+### Lección operativa: un 502 que era configuración
+
+Tras publicar, `/ask` respondía 502 y el log solo mostraba `error` con `error_type: ModelUnavailable`, sin el código
+de estado de Cloudflare. La causa era un valor pegado con comillas en Render > Environment: las comillas quedaron
+dentro del valor y rompieron la URL del gateway, y Cloudflare respondió 401 «Account ID missing from request path».
+
+- `ModelUnavailable` agrupa a propósito todo fallo del proveedor (ADR 0008), así que un error de configuración se
+  ve igual que una caída.
+- Ante 502 justo después de publicar o de cambiar una variable: revisar en Render que `CF_ACCOUNT_ID`,
+  `CF_GATEWAY_ID`, `CF_API_TOKEN` y `CF_AIG_TOKEN` estén sin comillas ni espacios, y que el token del gateway sea
+  vigente si el gateway tiene "Authenticated Gateway" encendido.
+- Si eso no basta, mirar los logs del propio AI Gateway en el panel de Cloudflare, que sí muestran el código de
+  estado de cada llamada.
+- Después de corregir, `verification production <url>` confirma que `/ask` vuelve a 200.
 
 ### En LangSmith
 
@@ -76,13 +95,17 @@ Las peticiones a `/metrics` no se cuentan.
 
 Señales que conviene vigilar:
 
-- `error_rate` mayor que 0: revisar en el log los `error` y su `error_type`.
+- `error_rate` mayor que 0: revisar en el log los `error` y su `error_type`; si es `ModelUnavailable` justo
+  después de un cambio de configuración, seguir la lección operativa de la sección 1.
 - `security.auth_failures` que sube rápido: alguien prueba claves; `rate_limited` alto: un cliente pasa su límite.
 - `security.outputs_blocked` mayor que 0: el modelo intentó devolver algo parecido a un secreto; revisar el
   `request_id` en el log.
+- `security.pii_detections` que sube sin que el personal escriba datos sensibles: el modelo puede estar inventando
+  datos; buscar `audit pii_detected` con `where: answer`.
 - `cache.hits / (hits + misses)` bajo con `RESPONSE_CACHE_TTL_SECONDS=300`: las preguntas no se repiten o los
   workers reparten los aciertos.
-- `cost_usd_per_request` que sube: más preguntas enrutadas al modelo grande o historiales más largos.
+- `cost_usd_per_request` que sube: más preguntas enrutadas al modelo grande, historiales más largos o un prompt de
+  sistema más largo (`doc/cost-analysis.md`).
 
 ## 3. SLO
 

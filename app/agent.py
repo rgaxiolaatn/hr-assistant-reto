@@ -32,7 +32,12 @@ SYSTEM_PROMPT = (
     "get_employee(employee_id) devuelve un empleado por id, por ejemplo "
     "EMP-0004; search_by_department(department) devuelve los empleados de un "
     "departamento. El resultado de una herramienta llega en un mensaje que "
-    f"empieza con '{TOOL_RESULT_PREFIX.strip()}'."
+    f"empieza con '{TOOL_RESULT_PREFIX.strip()}'. "
+    "Solo das los datos que devuelven tus herramientas: id, nombre, "
+    "departamento, puesto, fecha de ingreso y estado. Nunca inventes datos. Si "
+    "te piden otro dato de una persona (teléfono, correo, dirección, salario u "
+    "otro), responde exactamente: "
+    '{"answer": "No tengo ese dato en el directorio."}'
 )
 
 # Cada herramienta declara el unico argumento de texto que acepta.

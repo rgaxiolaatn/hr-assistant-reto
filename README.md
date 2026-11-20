@@ -71,9 +71,12 @@ En el reto el producto queda operable en producción:
   `create_app(response_cache=...)`) y un `threading.Lock`; es por proceso. `GET /metrics` cuenta `cache.hits` y
   `cache.misses`.
 - **Datos sensibles** (`app/pii.py`): con expresiones regulares compiladas una vez se detectan `email`, `phone`
-  (10 dígitos, `+52` y separadores opcionales), `curp`, `rfc`, `card` (13 a 19 dígitos que pasan Luhn) y `nss`
-  (11 dígitos). Una CURP no cuenta además como RFC y una tarjeta no cuenta como teléfono ni NSS; `EMP-0004` y las
-  fechas no son PII. Con `PII_POLICY=mask` (por omisión) cada dato de la pregunta y del historial se cambia por
+  (de 7 a 10 dígitos, `+52` opcional, juntos o separados por espacio, punto, guion o paréntesis: `987654321`,
+  `(55) 1234-5678`, `555-1234`), `curp`, `rfc`, `card` (13 a 19 dígitos que pasan Luhn) y `nss` (11 dígitos).
+  Una CURP no cuenta además como RFC y una tarjeta no cuenta como teléfono ni NSS; `EMP-0004` y las fechas no son
+  PII. El prompt de sistema le prohíbe al agente dar datos que no devuelven sus herramientas (teléfono, correo,
+  dirección, salario...) y le pide responder «No tengo ese dato en el directorio.»; si aun así inventa un teléfono,
+  el enmascarado de la respuesta lo oculta. Con `PII_POLICY=mask` (por omisión) cada dato de la pregunta y del historial se cambia por
   `[EMAIL]`, `[TELEFONO]`, `[CURP]`, `[RFC]`, `[TARJETA]` o `[NSS]` **antes** de llegar al enrutador, la caché, el
   modelo, el log y la traza; la respuesta también se enmascara, y agrega `"pii_detected": [...]` con los tipos sin
   repetir y en orden alfabético (no aparece si no hubo). Con `PII_POLICY=block` responde

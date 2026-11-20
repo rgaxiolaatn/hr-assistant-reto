@@ -1,8 +1,9 @@
 """Deteccion y enmascarado de datos sensibles (PII) con expresiones regulares.
 
-Tipos que se detectan: ``email``, ``phone`` (10 digitos, con ``+52`` opcional y
-separadores), ``curp``, ``rfc``, ``card`` (13 a 19 digitos que pasan Luhn) y
-``nss`` (11 digitos). Las expresiones se compilan una sola vez al importar.
+Tipos que se detectan: ``email``, ``phone`` (de 7 a 10 digitos, con ``+52``
+opcional, juntos o con separadores), ``curp``, ``rfc``, ``card`` (13 a 19
+digitos que pasan Luhn) y ``nss`` (11 digitos). Las expresiones se compilan
+una sola vez al importar.
 
 Los solapes se resuelven por prioridad: correo, tarjeta, CURP, RFC, NSS y
 telefono. Asi una CURP no cuenta ademas como RFC y una tarjeta no cuenta como
@@ -43,11 +44,17 @@ RFC_PATTERN = re.compile(
     r"(?<![\w&])[A-ZÑ&]{3,4}\d{6}[A-Z0-9]{3}(?!\w)", re.IGNORECASE
 )
 NSS_PATTERN = re.compile(r"(?<![\w+])\d{11}(?!\w)")
-# Telefono: 10 digitos en grupos 2-4-4 o 3-3-4, con +52 y separadores opcionales.
-# Los grupos fijos evitan tomar por telefono una fecha seguida de una hora.
+# Telefono: de 7 a 10 digitos con +52 opcional. Formas aceptadas: juntos
+# (987654321), 10 digitos en grupos 2-4-4 o 3-3-4 con lada opcional entre
+# parentesis y separadores de espacio, punto o guion ((55) 1234-5678), y 7 u 8
+# digitos en grupos 3-4 o 4-4 (555-1234). El ultimo grupo siempre es de 4 digitos,
+# asi una fecha como 2019-03-04 o un id como EMP-0004 no cuentan como telefono.
 PHONE_PATTERN = re.compile(
     r"(?<![\w+])(?:\+52[ .-]?)?"
-    r"(?:\d{2}[ .-]?\d{4}|\d{3}[ .-]?\d{3})[ .-]?\d{4}(?!\w)"
+    r"(?:\d{7,10}"
+    r"|(?:\(\d{2}\)|\d{2})[ .-]?\d{4}[ .-]?\d{4}"
+    r"|(?:\(\d{3}\)|\d{3})[ .-]?\d{3}[ .-]?\d{4}"
+    r"|\d{3,4}[ .-]\d{4})(?!\w)"
 )
 
 # Orden de prioridad para resolver solapes.

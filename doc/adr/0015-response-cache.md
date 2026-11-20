@@ -22,8 +22,17 @@ evita todo el bucle.
 ## Consecuencias
 
 - Una pregunta repetida cuesta 0 y responde en milisegundos; baja `cost_usd_per_request`. Medido con
-  `verification evaluate` (cada pregunta dos veces): calidad 100 %, costo 0.000164 USD contra 0.000328 USD solo
-  con palancas 1 a 3 (la mitad) y 93 % menos que la línea base (`doc/cost-analysis.md`).
+  `verification evaluate` (cada pregunta dos veces), tal cual:
+
+  ```
+  baseline  quality=100% cost_usd=0.002765 input_tokens=6514 ahorro=0%
+  levers    quality=100% cost_usd=0.000388 input_tokens=5374 ahorro=86%
+  cache     quality=100% cost_usd=0.000194 input_tokens=2687 ahorro=93%
+  ```
+
+  Calidad 100 %, costo 0.000194 USD contra 0.000388 USD solo con palancas 1 a 3 (la mitad) y 93 % menos que la
+  línea base (`doc/cost-analysis.md`). Las cifras subieron contra la medición anterior porque el prompt de sistema
+  es más largo (prohíbe datos fuera del directorio, ADR 0014); el ahorro relativo no cambió.
 - La caché es por proceso (ADR 0016): con varios workers el hit rate baja y se pierde al reiniciar.
 - Una respuesta puede quedar vieja hasta que venza el TTL; aceptable porque el directorio es de solo lectura y el
   TTL en Render es de 300 s.

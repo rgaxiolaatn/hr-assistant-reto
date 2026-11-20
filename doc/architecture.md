@@ -8,7 +8,9 @@ modelo usó y cuánto costó. Desde la sesión 4, `/ask` y `/metrics` exigen una
 de peticiones; en producción el producto se niega a arrancar si la configuración no cumple; se publica en Render
 como contenedor solo si el CI pasa. En el reto, la API queda documentada en OpenAPI, corre con varios workers,
 enmascara datos sensibles antes del modelo, rechaza inyecciones de instrucciones, valida la salida, audita cada
-guarda y responde preguntas repetidas desde una caché.
+guarda y responde preguntas repetidas desde una caché. Tras la primera publicación, el adaptador se autentica
+contra un AI Gateway con "Authenticated Gateway" (`CF_AIG_TOKEN`, ADR 0008) y el prompt prohíbe inventar datos
+fuera del directorio, con el enmascarado de la respuesta como red de seguridad (ADR 0014).
 
 Documentos de operación: `doc/observability.md` (rastrear una petición, métricas y SLO), `doc/cost-analysis.md`
 (palancas de costo medidas con `verification evaluate`), `doc/security.md` (controles y cómo se comprueban) y
@@ -33,7 +35,7 @@ flowchart LR
         R --> PII[pii.py<br/>detecta y enmascara]
         R --> RT[router.py]
         R --> CA[cache.py<br/>LRU con TTL, Lock]
-        R --> A[agent.py<br/>bucle con tope,<br/>uno por petición]
+        R --> A[agent.py<br/>bucle con tope,<br/>uno por petición,<br/>prompt sin datos inventados]
         A --> P[pricing.py]
         A --> CP[completion.py<br/>protocolo LLM]
         CP -.-> L[llm.py<br/>FakeLLM]
@@ -52,7 +54,7 @@ flowchart LR
         K --> CA
         C[config.py] --> CO[compliance.py]
     end
-    G -- HTTPS --> CF[(Cloudflare AI Gateway)]
+    G -- "HTTPS: Authorization (CF_API_TOKEN)<br/>y cf-aig-authorization (CF_AIG_TOKEN, opcional)" --> CF[(Cloudflare AI Gateway)]
     D --> J[(data/employees.json)]
     P --> PJ[(data/model_prices.json)]
     T --> O[(stdout JSON<br/>log de Render)]
@@ -106,7 +108,7 @@ sequenceDiagram
                     A->>T: audit tool_call
                 end
                 A->>T: agent_run con latency_ms y cost_usd, traza con metadatos
-                API->>GR: validar salida (vacía, largo, secretos, PII)
+                API->>GR: validar salida (vacía, largo, secretos, PII como un teléfono inventado)
                 GR->>T: audit output_blocked o pii_detected (answer) si aplica
                 API->>C: guardar solo si no hubo PII ni bloqueo
             end
@@ -122,7 +124,8 @@ sequenceDiagram
 
 El CI (`.github/workflows/ci.yml`, `permissions: contents: read`) encadena `style -> unit -> e2e -> docker`.
 Render publica con `autoDeployTrigger: checksPass`, `runtime: docker`, `healthCheckPath: /health` y
-`WEB_CONCURRENCY=2`. Después, `verification production <url>` y `verification load <url>`.
+`WEB_CONCURRENCY=2`. Después, `verification production <url>` (incluye una pregunta por un teléfono que el modelo
+no debe inventar) y `verification load <url>`.
 
 ## Principios
 
@@ -136,13 +139,15 @@ Render publica con `autoDeployTrigger: checksPass`, `runtime: docker`, `healthCh
   obligatorias porque el Blueprint fija `LANGSMITH_TRACING=true` y pide `LANGSMITH_API_KEY`, y en local siguen
   siendo opcionales (ADR 0017).
 - Una regla en código elige el modelo por pregunta (ADR 0007).
-- El modelo real es un adaptador de AI Gateway con cliente inyectado; sus fallos son 502 (ADR 0008).
+- El modelo real es un adaptador de AI Gateway con cliente inyectado; sus fallos son 502; si hay `CF_AIG_TOKEN`
+  se autentica contra el gateway con `cf-aig-authorization` (ADR 0008).
 - Cada respuesta lleva su costo; ventana, tope de salida y caché del gateway son palancas medidas (ADR 0009).
 - Con un modelo inyectado sin nombre, `/ask` no reporta costo (ADR 0010).
 - Una clave por cliente, comparada en tiempo constante; solo el nombre del cliente se registra (ADR 0011).
 - Límite de peticiones por cliente, en memoria y con reloj inyectado (ADR 0012).
 - Compliance como código al arrancar; Render publica solo si el CI pasa (ADR 0013).
-- Datos sensibles enmascarados antes del modelo, el log, la traza y la caché (ADR 0014).
+- Datos sensibles enmascarados antes del modelo, el log, la traza y la caché; el modelo no inventa datos fuera del
+  directorio y, si lo hace, el enmascarado de la respuesta lo tapa (ADR 0014).
 - Caché de respuestas LRU con TTL, nunca con PII ni salidas bloqueadas (ADR 0015).
 - Varios workers; todo estado del proceso con candado y por proceso (ADR 0016).
 - Orden de guardas fijo: clave, límite, esquema, inyección, PII, caché, agente, salida.
@@ -171,7 +176,8 @@ Render publica con `autoDeployTrigger: checksPass`, `runtime: docker`, `healthCh
 | `LANGSMITH_PROJECT` | sin valor (`hr-assistant-reto` en Render) | nombre del proyecto en LangSmith |
 | `HIDE_INPUTS` / `HIDE_OUTPUTS` | `true` | `true` o `false` (en producción con trazas, `true`) |
 | `LANGSMITH_API_KEY` | sin valor | opcional en local; en Render es secreto obligatorio (`sync: false`); solo se comprueba que exista y nunca se registra |
-| `CF_ACCOUNT_ID`, `CF_GATEWAY_ID`, `CF_API_TOKEN` | vacía, `default`, vacía | obligatorias con `gateway`; el token nunca se registra |
+| `CF_ACCOUNT_ID`, `CF_GATEWAY_ID`, `CF_API_TOKEN` | vacía, `default`, vacía | obligatorias con `gateway`; el token nunca se registra; en Render, sin comillas |
+| `CF_AIG_TOKEN` | vacía | opcional siempre; secreto (`repr=False` en `config.py`, `sync: false` en `render.yaml`), nunca se registra. Con valor se manda `cf-aig-authorization: Bearer <token>` (gateway con "Authenticated Gateway"); vacío, no se manda. Token separado de `CF_API_TOKEN`, solo con `AI Gateway: Run` |
 | `MODEL_SMALL` | `@cf/meta/llama-3.1-8b-instruct-fast` | no vacío y con precio |
 | `MODEL_LARGE` | `@cf/meta/llama-3.3-70b-instruct-fp8-fast` | no vacío y con precio |
 | `ROUTING` | `true` | `true` o `false` |

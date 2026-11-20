@@ -8,8 +8,19 @@ from conftest import (
     read_log,
 )
 from app import guardrails, pii
+from app.agent import SYSTEM_PROMPT
 
 EMAIL = "ana.lopez@example.com"
+INVENTED_PHONE = "987654321"
+PHONE_FORMATS = [
+    INVENTED_PHONE,
+    "5512345678",
+    "(55) 1234-5678",
+    "555-1234",
+    "55.1234.5678",
+    "+52 55 1234 5678",
+]
+NO_DATA_ANSWER = "No tengo ese dato en el directorio."
 CURP = "LOPA900101MDFRRN09"
 RFC = "LOPA900101AB1"
 CARD = "4111111111111111"
@@ -49,6 +60,55 @@ def test_masking_replaces_each_value_with_its_label():
     assert masked == "Soy [EMAIL], tel [TELEFONO], CURP [CURP], tarjeta [TARJETA]"
     assert pii.mask(f"RFC {RFC} NSS {NSS}") == "RFC [RFC] NSS [NSS]"
     assert pii.mask("¿Quién es EMP-0004?") == "¿Quién es EMP-0004?"
+
+
+def test_every_phone_format_from_seven_to_ten_digits_is_detected_and_masked():
+    for phone in PHONE_FORMATS:
+        text = f"Su teléfono es {phone}."
+        assert pii.detect(text) == ["phone"], phone
+        assert pii.mask(text) == "Su teléfono es [TELEFONO].", phone
+
+
+def test_dates_ids_nss_and_cards_are_not_reported_as_phones():
+    assert not pii.detect("EMP-0004 entró el 2019-03-04.")
+    assert pii.mask("EMP-0004 entró el 2019-03-04.") == "EMP-0004 entró el 2019-03-04."
+    assert pii.detect(f"Mi NSS es {NSS}") == ["nss"]
+    assert pii.mask(f"Mi NSS es {NSS}") == "Mi NSS es [NSS]"
+    assert pii.detect(f"Tarjeta {CARD}") == ["card"]
+    assert pii.mask(f"Tarjeta {CARD}") == "Tarjeta [TARJETA]"
+
+
+def test_a_phone_invented_by_the_model_is_masked_in_the_answer(
+    settings, directory, clock, log_stream
+):
+    invented = f"El número de teléfono del empleado Ana López es {INVENTED_PHONE}."
+    llm = ScriptedLLM([f'{{"answer": "{invented}"}}'])
+    client = build_client(settings, llm, directory, clock=clock, log_stream=log_stream)
+
+    response = client.post(
+        "/ask", json={"question": "¿Cuál es el teléfono de EMP-0004?"}
+    ).json()
+
+    assert INVENTED_PHONE not in response["answer"]
+    assert "[TELEFONO]" in response["answer"]
+    assert response["pii_detected"] == ["phone"]
+    audits = [e for e in read_log(log_stream) if e["event"] == "audit"]
+    in_answer = [
+        e["types"]
+        for e in audits
+        if e["action"] == "pii_detected" and e["where"] == "answer"
+    ]
+    assert in_answer == [["phone"]]
+    assert INVENTED_PHONE not in log_stream.getvalue()
+
+
+def test_system_prompt_forbids_personal_data_outside_the_directory():
+    prompt = SYSTEM_PROMPT.lower()
+
+    assert NO_DATA_ANSWER in SYSTEM_PROMPT
+    assert "directorio" in prompt
+    for field in ("teléfono", "correo", "salario"):
+        assert field in prompt, field
 
 
 def test_injection_is_detected_ignoring_case_and_accents():
